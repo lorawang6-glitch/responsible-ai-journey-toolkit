@@ -390,6 +390,37 @@ body.nohover .card{pointer-events:none}
 .tfoot{display:flex;justify-content:space-between;align-items:center;margin-top:18px;gap:20px}
 .tfoot span{font-size:13px;color:var(--faint)}
 
+/* ── rejecting is not one button: four reasons, four consequences ───── */
+.tpanel.rj{width:1000px;max-height:88vh;padding:0;display:flex;flex-direction:column}
+.rjhead{flex:0 0 auto;padding:28px 34px 16px}
+.rjbody{flex:1 1 auto;min-height:0;overflow-y:auto;padding:0 34px 4px}
+.rjfoot{flex:0 0 auto;padding:16px 34px 22px;border-top:1px solid var(--line);background:var(--card);
+  border-radius:0 0 16px 16px}
+.rjfoot .rjnote{margin:0 0 14px;padding-top:0;border-top:0}
+.rjfoot .row{display:flex;justify-content:flex-end;gap:10px}
+.rjq{background:var(--panel);border-radius:12px;padding:14px 20px;margin:12px 0 20px}
+.rjq p{margin:0;font-size:14px;line-height:1.6;color:var(--ink)}
+.rjq span{display:block;margin-top:6px;font-size:11.5px;color:var(--faint)}
+.rjopt{display:block;width:100%;text-align:left;background:var(--card);font:inherit;color:inherit;
+  border:1px solid var(--line);border-radius:10px;padding:12px 18px;cursor:pointer}
+.rjopt+.rjopt{margin-top:8px}
+.rjopt.on{border-color:var(--ink);border-width:1.5px;padding:11.5px 17.5px}
+.rjrow{display:flex;gap:14px;align-items:flex-start}
+.rjmark{position:relative;flex:0 0 auto;width:16px;height:16px;border-radius:50%;
+  border:1px solid var(--ghost);background:var(--card);margin-top:4px}
+.rjopt.on .rjmark{background:var(--ink);border-color:var(--ink)}
+.rjopt.on .rjmark::after{content:"";position:absolute;left:4px;top:4px;width:6px;height:6px;
+  border-radius:50%;background:var(--card)}
+.rjopt b{display:block;font-size:15px;font-weight:500;color:var(--ink);line-height:1.45}
+.rjopt em{display:block;font-style:normal;font-size:12.5px;color:var(--body);line-height:1.5;margin-top:3px}
+.rjfield{margin:14px 0 0 30px;background:var(--panel);border-radius:9px;padding:14px 18px}
+.rjfield textarea{display:block;width:100%;box-sizing:border-box;margin-top:10px;background:var(--card);
+  border:1px solid #D8D8D4;border-radius:7px;padding:12px 14px;font:inherit;font-size:13.5px;
+  line-height:1.5;resize:none;color:var(--ink)}
+.rjfield p{margin:10px 0 0;font-size:12px;color:var(--faint);line-height:1.5}
+.rjnote{margin:20px 0 0;padding-top:18px;border-top:1px solid var(--line);
+  font-size:12.5px;color:var(--faint);line-height:1.55}
+
 /* ── Revise ─────────────────────────────────────────────────────────── */
 .rvtwo{display:grid;grid-template-columns:400px 1fr;gap:0 40px;
   grid-template-rows:auto minmax(0,1fr);align-items:stretch;flex:1 1 auto;min-height:0}
@@ -856,6 +887,7 @@ function render() {
       : S.step === "fork"       ? Fork()
       : S.step === "report"     ? Report()
       :                           Build());
+    if (S.exp && S.exp.reject)     frag.appendChild(RejectPanel());
     if (S.exp && S.exp.transcript) frag.appendChild(Transcript());
     if (S.menu)  frag.appendChild(Menu());
     if (S.modal) frag.appendChild(Modal());
@@ -1666,10 +1698,37 @@ function nextStage() {
   enterStage(i);
 }
 const keptOf = s => (S.exp.kept[s.key] || []);
+/* the four reasons come from the design document — they are listed
+   because their consequences differ, not because they are exhaustive. */
+const REASONS = [
+  { key:"not_apply", label:"Evidence does not apply here",
+    note:"A retrieval failure. Set aside. If nothing else matches, the stage ends with no evidence, and the report says so.",
+    field:null, short:"evidence does not apply here" },
+  { key:"reading", label:"The evidence holds, but the reading is wrong",
+    note:"A phrasing failure. The quote stays. You rewrite the reading yourself.",
+    field:"WHAT SHOULD THE READING SAY?",
+    help:"The quote stays in the base untouched. Only the reading changes, and the report shows it as yours.",
+    short:"the reading was wrong" },
+  { key:"not_mine", label:"It would not happen in my design",
+    note:"A disagreement. The toolkit does not argue. It asks what in your design prevents it, and records your answer.",
+    field:"WHAT IN YOUR DESIGN PREVENTS IT?",
+    help:"This is a claim about your design. The report shows it as a claim you have not tested, unless your Build declaration backs it.",
+    short:"it would not happen in this design" },
+  { key:"other", label:"Something else",
+    note:"In your own words. The three above are listed because their consequences differ, not because they cover everything.",
+    field:"IN YOUR OWN WORDS", help:null, short:"another reason" },
+];
+const reasonOf = k => REASONS.find(r => r.key === k) || null;
+
 function decide(s, mid, keep) {
+  if (!keep) { S.exp.reject = { id: mid, reason: null, text: "" }; return render(); }
+  recordDecision(s, mid, true, null, "");
+}
+function recordDecision(s, mid, keep, reason, text) {
   const arr = keptOf(s).filter(x => x.id !== mid);
-  arr.push({ id: mid, keep });
+  arr.push({ id: mid, keep, reason: reason || null, text: (text || "").trim() });
   S.exp.kept[s.key] = arr;
+  S.exp.reject = null;
   const w = walkFor(s);
   if (S.exp.m < w.read.length - 1) { S.exp.m++; render(); }
   else { S.exp.phase = "reviewed"; render(); }
@@ -1841,15 +1900,35 @@ function Work() {
       S.exp.i + 1 < S.stages.length ? "Continue to stage " + (S.exp.i + 2) : "Finish Experience"));
 
   else if (p === "reviewed") {
-    const kept = keptOf(s).filter(x => x.keep).length;
-    const tot  = walkFor(s).read.length;
-    body = h("div", { class: "state" },
-      h("h4", { text: kept === 1 ? "One moment carries forward from this stage"
-                                 : kept + " moments carry forward from this stage" }),
-      h("p",  { text: "You kept " + kept + " of the " + tot + " readings. " +
-        (tot - kept === 0 ? "" : "The " + (tot - kept === 1 ? "other is" : "others are") + " recorded as rejected, with your reason.") }),
-      h("button", { class: "btn", onclick: nextStage },
-        S.exp.i + 1 < S.stages.length ? "Continue to stage " + (S.exp.i + 2) : "Finish Experience"));
+    const recs  = keptOf(s);
+    const kept  = recs.filter(x => x.keep).length;
+    const tot   = walkFor(s).read.length;
+    const aside = recs.filter(x => !x.keep);
+    const rw    = recs.filter(x => x.reason === "reading").length;
+    const on    = h("button", { class: "btn", onclick: nextStage },
+      S.exp.i + 1 < S.stages.length ? "Continue to stage " + (S.exp.i + 2) : "Finish Experience");
+
+    /* nothing kept is a result in itself, and it has to be said */
+    body = kept === 0
+      ? h("div", { class: "state" },
+          h("h4", { text: "This stage ends with no evidence" }),
+          h("p",  { text: "You set aside all " + tot + " reading" + (tot === 1 ? "" : "s") +
+            ". The report records this stage as having no evidence, with your reason for each. " +
+            "That is a result, not a blank." }),
+          aside.length === tot && aside.every(x => x.reason === "not_apply")
+            ? h("p", { text: "Every one was set aside as not applying here. If that keeps happening, " +
+                "what this stage declares and what the base holds are not lining up." })
+            : null,
+          on)
+      : h("div", { class: "state" },
+          h("h4", { text: kept === 1 ? "One moment carries forward from this stage"
+                                     : kept + " moments carry forward from this stage" }),
+          h("p",  { text: "You kept " + kept + " of the " + tot + " readings" +
+            (rw ? ", " + (rw === 1 ? "one of them with a reading you rewrote" :
+                          rw + " of them with readings you rewrote") : "") + ". " +
+            (aside.length === 0 ? "" : "The " + (aside.length === 1 ? "other is" : "others are") +
+              " recorded as set aside, with your reason.") }),
+          on);
   }
 
   else { /* done */
@@ -1943,6 +2022,66 @@ function transcriptOf(m) {
   });
   flush(false);
   return { turns, group: "Older adult · varying digital confidence", source: m.source, plain: true };
+}
+
+/* rejecting a moment is a deliberate act, so it gets the same overlay
+   the transcript gets — and it asks why, because the four answers do
+   different things. (design document §"否决之后发生什么") */
+function RejectPanel() {
+  const s = S.stages[S.exp.i];
+  const R = S.exp.reject, m = EV(R.id);
+  const close = () => { S.exp.reject = null; render(); };
+  const chosen = reasonOf(R.reason);
+  const needsText = chosen && chosen.field;
+  const ok = () => !!chosen && (!needsText || R.text.trim().length > 0);
+
+  /* reason 2 is the one rejection that keeps the moment — the evidence
+     holds, only the wording was wrong. so the button says what happens. */
+  const keeps = () => R.reason === "reading";
+  const go = h("button", { class: "btn", disabled: !ok(),
+    onclick: () => recordDecision(s, R.id, keeps(), R.reason, R.text) },
+    keeps() ? "Record the rewrite" : "Record the rejection");
+
+  const opts = REASONS.map(r => {
+    const on = R.reason === r.key;
+    const btn = h("button", { class: "rjopt" + (on ? " on" : ""),
+      onclick: () => { R.reason = r.key; R.text = ""; render(); } },
+      h("div", { class: "rjrow" },
+        h("i", { class: "rjmark" }),
+        h("div", {}, h("b", { text: r.label }), h("em", { text: r.note }))));
+    if (!on || !r.field) return btn;
+
+    const ta = h("textarea", { class: "rjtext", rows: 2 });
+    ta.value = R.text;
+    ta.addEventListener("input", e => { R.text = e.target.value; go.disabled = !ok(); });
+    ta.addEventListener("click", e => e.stopPropagation());
+    const field = h("div", { class: "rjfield" },
+      h("p", { class: "lab", text: r.field }), ta,
+      r.help ? h("p", { text: r.help }) : null);
+    field.addEventListener("click", e => e.stopPropagation());
+    btn.appendChild(field);
+    return btn;
+  });
+
+  /* the question and the two exits stay put; only the reasons scroll,
+     so the buttons cannot be pushed off the bottom of the screen. */
+  return h("div", { class: "scrim", onclick: close },
+    h("div", { class: "tpanel rj", onclick: e => e.stopPropagation() },
+      h("div", { class: "rjhead" },
+        h("p", { class: "lab", text: "Reject" }),
+        h("h3", { style: "margin:14px 0 0;font-size:21px;font-weight:600;letter-spacing:-.01em",
+          text: "Why does this not apply?" })),
+      h("div", { class: "rjbody" },
+        m ? h("div", { class: "rjq" },
+              h("p", { text: "\u201C" + m.quote + ".\u201D" }),
+              h("span", { text: m.id + "  ·  " + m.participant })) : null,
+        h("div", {}, opts)),
+      h("div", { class: "rjfoot" },
+        h("p", { class: "rjnote", text:
+          "Every rejection is recorded with its reason and appears in the report. " +
+          "Rejecting never filters what you are shown next — only changing your Build declaration does that." }),
+        h("div", { class: "row" },
+          h("button", { class: "btn ghost", onclick: close }, "Cancel"), go))));
 }
 
 function Transcript() {
@@ -2163,9 +2302,15 @@ function Revise() {
           m.id + "  ·  " + m.participant + "  ·  " + S.project.fit + " fit  ·  ",
           h("a", { href: "#", onclick: e => { e.preventDefault(); S.exp.transcript = m.id; render(); } },
             "Read the transcript →")),
-        h("div", { class: "accepted" },
-          h("p", { class: "lab", text: "You accepted this reading" }),
-          h("p", { class: "infer", style: "margin-top:8px", text: r ? r.infer : "" }))),
+        (() => {
+          const rec = kept[S.rev.m];
+          const mine = rec.reason === "reading" && rec.text;
+          return h("div", { class: "accepted" },
+            h("p", { class: "lab", text: mine ? "You rewrote this reading" : "You accepted this reading" }),
+            h("p", { class: "infer", style: "margin-top:8px", text: mine ? rec.text : (r ? r.infer : "") }),
+            mine ? h("p", { style: "margin:10px 0 0;font-size:11.5px;color:var(--faint);line-height:1.5",
+              text: "The AI's reading was set aside as wrong. The quote is unchanged." }) : null);
+        })()),
       h("h4", { style: "margin:24px 0 4px;font-size:19px;font-weight:600;letter-spacing:-.01em",
         text: "What does this expose?" }),
       h("p", { style: "margin:0 0 14px;font-size:13.5px;color:var(--mute)",
@@ -2404,9 +2549,16 @@ function Report() {
     if (s.ai !== true) return "Stage " + (i + 1) + " — no AI; walked through, nothing retrieved.";
     if (!walkFor(s).read.length)
       return "Stage " + (i + 1) + " — no one in the base was in the situation you declared. This is a gap in the base, not a verdict on the stage.";
-    const rej = keptOf(s).filter(x => !x.keep).length;
-    return rej ? "Stage " + (i + 1) + " — " + rej + " reading" + (rej > 1 ? "s" : "") + " set aside, with your reason."
-               : null;
+    const rej = keptOf(s).filter(x => !x.keep);
+    if (!rej.length) return null;
+    const why = rej.map(x => {
+      const r = reasonOf(x.reason);
+      const head = r ? r.short : "no reason recorded";
+      /* the designer wrote the sentence — do not punctuate it for them */
+      return x.id + " — " + head + (x.text ? ": \u201C" + x.text + "\u201D" : "");
+    }).join("   ·   ");
+    return "Stage " + (i + 1) + " — " + rej.length + " reading" + (rej.length > 1 ? "s" : "") +
+           " set aside.   " + why;
   }).filter(Boolean);
 
   /* how far the moment behind a change actually matched */
@@ -2464,6 +2616,10 @@ function Report() {
         h("h3", { text: "What this does not cover" }),
         h("div", { class: "gap" },
           silences.map(t => h("p", { text: t })),
+          S.stages.flatMap((st, i) => keptOf(st)
+            .filter(x => x.reason === "reading" && x.text)
+            .map(x => h("p", { text: "Stage " + (i + 1) + " — " + x.id +
+              ": the AI's reading was set aside as wrong. Your reading: \u201C" + x.text + "\u201D" }))),
           h("p", { style: "margin-top:12px" },
             h("b", { text: "No stage was graded." }),
             " Friction is reported where evidence was kept. Its absence is never reported — an empty row above means the base held nothing for that stage, not that the stage was checked and found sound.")))));
