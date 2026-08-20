@@ -1872,7 +1872,7 @@ function Work() {
   const walked = S.stages.filter((_, i) => i < S.exp.i).length;
   return h("div", { class: "work" },
     h("div", { class: "workhead" },
-      h("h3", { text: S.exp.phase === "done" ? "Walkthrough complete" : "Relevant evidence" }),
+      h("h3", { text: S.exp.phase === "done" ? "Experience complete" : "Relevant evidence" }),
       h("p",  { class: "sub", text: S.exp.phase === "done"
         ? S.stages.length + " stages walked · " + aiStages().length + " AI stages"
         : "Retrieved once for this stage. The quote is the claim; the inference is a reading of it." }),
