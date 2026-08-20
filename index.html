@@ -44,6 +44,11 @@ input,textarea{font-family:inherit;font-size:inherit;color:inherit}
 /* ── the three-step bar ─────────────────────────────────────────────── */
 .topbar{background:#fff;padding:22px 40px 0;flex:0 0 auto}
 .steps{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.stepcol{display:block;width:100%;background:none;border:0;padding:0;margin:0;
+  font:inherit;color:inherit;text-align:left;cursor:default}
+.stepcol.can{cursor:pointer}
+.stepcol.can:hover h4{color:var(--ink)}
+.stepcol.can:hover p{color:var(--body)}
 .stepcol h4{margin:0 0 3px;font-size:13.5px;font-weight:500;color:var(--faint)}
 .stepcol p{margin:0;font-size:13.5px;color:#BFC0C4}
 .stepcol.on h4{font-weight:600;color:var(--ink)}
@@ -770,8 +775,10 @@ const blankStage = () => ({
 
 const S = { step: "start", auth: "signup", setup: 1,
   project: { name: "", audience: "", context: "", own: null, fit: "Partial" },
-  stages: [blankStage()], menu: null, modal: null, editing: null };
+  stages: [blankStage()], menu: null, modal: null, editing: null,
+  reached: 0 };   /* the furthest step reached — you can go back to any of them */
 const goto = (step, extra) => { Object.assign(S, extra || {}); S.step = step;
+  if (step === "start" || step === "setup") S.reached = 0;
   S.resetScroll = true; render(); };
 
 const isDone = s => s.name.trim() && s.userAction.trim() && s.ai !== null && s.goal.trim() &&
@@ -1142,7 +1149,7 @@ function Auth() {
         h("div", { class: "aurule2" }),
         stat("8", "interviews with older adults using public services"),
         stat("33", "moments recorded from those transcripts"),
-        stat("0", "words in any quote written by the tool"))));
+        stat("0", "words in any quote written by the AI"))));
 }
 
 /* ══════════════════════════════════════════════════════════ set up ═══ */
@@ -1195,9 +1202,9 @@ function Setup() {
     head = ["Add your own evidence?", "The provided base is always used. Your own material is added to it."];
     card = [h("div", { class: "su2" },
         [["no", "Not now — run on the provided base",
-          "Research interviews already prepared for the walkthrough. You will see what they cover before you commit to them."],
+          "Research interviews already prepared for the toolkit. You will see what they cover before you commit to them."],
          ["yes", "Yes — added to the provided base",
-          "Bring your own transcripts. The tool drafts an annotation for each moment and you confirm it."]]
+          "Bring your own transcripts. The AI drafts an annotation for each moment and you confirm it."]]
         .map(([v, ttl, sub]) => h("button", { class: "pick" + (p.own === v ? " on" : ""),
           onclick: () => { p.own = v; render(); } },
           h("b", { text: ttl }), h("span", { text: sub })))),
@@ -1221,7 +1228,7 @@ function Setup() {
 
   if (n === 4) {
     head = ["How close is this evidence to your project?",
-            "You decide. The tool states what it holds and what it does not."];
+            "You decide. The toolkit states what it holds and what it does not."];
     card = [
       h("div", { class: "ref2" },
         h("div", { class: "refbox" },
@@ -1282,13 +1289,32 @@ const STEPS = [
   ["Step 2: Experience", "Evidence-informed AI walkthrough"],
   ["Step 3: Revise",     "Evidence-backed change requests"],
 ];
+/* the toolkit is a loop, so the bar has to let you back. a step you have
+   already been through stays open; one you have not reached does not. */
 function TopBar() {
   const at = S.step === "experience" ? 1
            : (S.step === "revise" || S.step === "fork" || S.step === "report") ? 2 : 0;
+  const reached = S.reached || 0;
+  const goBack = i => {
+    S.resetScroll = true;
+    if (i === 0) { S.step = "build"; render(); }
+    else if (i === 1) {
+      S.step = "experience";
+      /* stages can have been edited while you were away */
+      if (!S.exp || !S.stages[S.exp.i]) enterStage(0); else render();
+    } else { S.step = "revise"; render(); }
+  };
   return h("div", { class: "topbar" },
     h("div", { class: "steps" },
-      STEPS.map(([a, b], i) => h("div", { class: "stepcol" + (i === at ? " on" : "") },
-        h("h4", { text: a }), h("p", { text: b })))),
+      STEPS.map(([a, b], i) => {
+        const open = i <= reached && i !== at;
+        return h("button", {
+            class: "stepcol" + (i === at ? " on" : "") + (open ? " can" : ""),
+            disabled: !open,
+            title: open ? "Back to " + a.replace(/^Step \d: /, "") : null,
+            onclick: () => goBack(i) },
+          h("h4", { text: a }), h("p", { text: b }));
+      })),
     h("div", { class: "steprule" },
       STEPS.map((_, i) => h("i", { class: i === at ? "on" : "" }))));
 }
@@ -1618,6 +1644,7 @@ const walkFor = s => { const k = aiStages().indexOf(s); return k >= 0 ? (WALK[k]
 const WALK_MS = 1800;   /* keep in step with --walk */
 function startExperience() {
   S.step = "experience";
+  S.reached = Math.max(S.reached || 0, 1);
   S.exp = { i: 0, phase: null, m: 0, kept: {}, transcript: null };
   enterStage(0);
 }
@@ -1804,14 +1831,14 @@ function Work() {
       "Finding nothing does not mean the stage is fine. Nothing has been inferred and nothing has been marked, so stage " +
       (S.exp.i + 1) + " carries no result into Revise." }),
     h("button", { class: "btn", onclick: nextStage },
-      S.exp.i + 1 < S.stages.length ? "Continue to stage " + (S.exp.i + 2) : "Finish the walkthrough"));
+      S.exp.i + 1 < S.stages.length ? "Continue to stage " + (S.exp.i + 2) : "Finish Experience"));
 
   else if (p === "noai") body = h("div", { class: "state" },
     h("h4", { text: "No AI is involved here, so nothing is retrieved" }),
     h("p",  { text: "You declared no AI at this stage in Build. The walk passes through it because it is part of the journey, but there is nothing here to check against the base." }),
     h("p",  { class: "q", text: "The stage still counts, because what happens either side of an AI stage is part of what the accumulation is read from." }),
     h("button", { class: "btn", onclick: nextStage },
-      S.exp.i + 1 < S.stages.length ? "Continue to stage " + (S.exp.i + 2) : "Finish the walkthrough"));
+      S.exp.i + 1 < S.stages.length ? "Continue to stage " + (S.exp.i + 2) : "Finish Experience"));
 
   else if (p === "reviewed") {
     const kept = keptOf(s).filter(x => x.keep).length;
@@ -1822,7 +1849,7 @@ function Work() {
       h("p",  { text: "You kept " + kept + " of the " + tot + " readings. " +
         (tot - kept === 0 ? "" : "The " + (tot - kept === 1 ? "other is" : "others are") + " recorded as rejected, with your reason.") }),
       h("button", { class: "btn", onclick: nextStage },
-        S.exp.i + 1 < S.stages.length ? "Continue to stage " + (S.exp.i + 2) : "Finish the walkthrough"));
+        S.exp.i + 1 < S.stages.length ? "Continue to stage " + (S.exp.i + 2) : "Finish Experience"));
   }
 
   else { /* done */
@@ -1927,7 +1954,7 @@ function Transcript() {
       h("p", { style: "margin:14px 0 0", text:
         "No moment with that id is in the base." }),
       h("div", { class: "tfoot" }, h("span"),
-        h("button", { class: "btn", onclick: close }, "Back to the walkthrough"))));
+        h("button", { class: "btn", onclick: close }, "Close"))));
 
   const t = transcriptOf(m);
   const nd = "Not declared at upload";
@@ -1953,7 +1980,7 @@ function Transcript() {
         h("p", { class: "tellipsis", style: "margin:16px 0 0", text: "… the conversation continues" })),
       h("div", { class: "tfoot" },
         h("span", { text: "The marked line is the moment retrieved for this stage." }),
-        h("button", { class: "btn", onclick: close }, "Back to the walkthrough"))));
+        h("button", { class: "btn", onclick: close }, "Close"))));
 }
 
 function Experience() {
@@ -2048,6 +2075,7 @@ const LENSES = [
 function startRevise() {
   const first = S.stages.findIndex(s => keptOf(s).some(x => x.keep));
   S.step = "revise";
+  S.reached = Math.max(S.reached || 0, 2);
   S.rev = { i: first < 0 ? 0 : first, m: 0, open: null, changes: {} };
   S.resetScroll = true; render();
 }
@@ -2158,10 +2186,9 @@ function Revise() {
               h("p",  { class: "sub", style: "margin:0", text: total
                 ? total + (total === 1 ? " change requested." : " changes requested.") + " Nothing is applied yet."
                 : "Nothing is applied to your design. These become requests in the report." })),
+            /* going back is the step bar's job now — this row carries
+               only the action that moves you on. */
             h("div", { style: "display:flex;gap:10px;flex:0 0 auto" },
-              h("button", { class: "btn ghost",
-                onclick: () => { S.step = "experience"; S.resetScroll = true; render(); } },
-                "Back to the walkthrough"),
               h("button", { class: "btn",
                 onclick: () => { S.step = "fork"; S.resetScroll = true; render(); } },
                 "Export the report")))),
@@ -2192,8 +2219,8 @@ function Lens(s, L) {
         h("div", { class: "now", text: done.now }))),
     h("p", { class: "flip" }, "\u2713 requested \u2014 it will appear in the report"));
 
-  /* opened. the tool shows what is there now and gives the designer somewhere
-     to write what it should be. it does not propose the change. */
+  /* opened. the toolkit shows what is there now and gives the designer
+     somewhere to write what it should be. it does not propose the change. */
   const d = draftOf(L.key);
   const box = h("div", { class: "fieldbox" },
     h("p", { class: "lab", style: "margin:0 0 2px", text: L.fieldName }));
@@ -2286,7 +2313,7 @@ function Fork() {
             h("span", { text: r.what }),
             h("span", { class: "tag", text: r.tag })))),
         h("div", { class: "forkq" },
-          h("p", { class: "cap", text: "The only question the tool has no position on" }),
+          h("p", { class: "cap", text: "The only question the toolkit has no position on" }),
           h("h3", { text: "Re-walk the changed stages?" }),
           h("p", { class: "lede", style: "margin-bottom:0", text:
             "A re-walk may return the same moments, different ones, or none at all. The report is produced either way, and re-walking adds a second round to it." }),
@@ -2395,7 +2422,7 @@ function Report() {
     h("div", { style: "display:flex;justify-content:space-between;align-items:flex-start;gap:24px;margin-bottom:18px;flex:0 0 auto" },
       h("div", {},
         h("h2", { class: "phdr", style: "font-size:26px", text: "The report" }),
-        h("p",  { class: "phdrsub", text: "Nothing here was written by the tool." })),
+        h("p",  { class: "phdrsub", text: "Nothing here was written by the AI." })),
       h("div", { class: "rtop" },
         h("button", { class: "btn", text: "Download PDF" }),
         h("button", { class: "btn ghost", text: "Save and exit",
